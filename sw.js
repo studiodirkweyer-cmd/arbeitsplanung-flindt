@@ -1,8 +1,8 @@
 "use strict";
 
-// Versionsnummer bei jeder Änderung an den App-Shell-Dateien erhöhen,
-// damit Clients die neue Version laden.
-const CACHE_NAME = "schichtkalender-v1";
+// Dient nur als Name für den Offline-Fallback-Cache (Network-first Strategie
+// unten lädt ohnehin bei jedem Aufruf mit Verbindung die aktuelle Version).
+const CACHE_NAME = "schichtkalender-v2";
 
 const APP_SHELL = [
   "./",
@@ -30,8 +30,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Nur eigene App-Shell-Dateien cachen (Cache-first mit Netzwerk-Fallback).
-// Die Google-Sheets-CSV wird bewusst NICHT hier abgefangen - das Sync-/
+// Nur eigene App-Shell-Dateien abfangen (Network-first mit Cache-Fallback):
+// Bei bestehender Verbindung wird immer die aktuelle Version geladen, erst
+// bei fehlender Verbindung greift der zuletzt bekannte Cache-Stand. Die
+// Google-Sheets-CSV wird bewusst NICHT hier abgefangen - das Sync-/
 // Cache-Verhalten dafür regelt app.js selbst (localStorage, 24h-Intervall).
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
@@ -40,20 +42,20 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => {
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request).then((cached) => {
+          if (cached) return cached;
           if (event.request.mode === "navigate") {
             return caches.match("./index.html");
           }
           return undefined;
-        });
-    })
+        })
+      )
   );
 });

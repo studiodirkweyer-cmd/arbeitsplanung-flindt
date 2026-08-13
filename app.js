@@ -406,12 +406,49 @@ function goToWeek(weekStart) {
   document.getElementById("scrollArea").scrollTo({ top: 0 });
 }
 
+let isAnimatingWeek = false;
+
+// Animiert den Wechsel zur direkt angrenzenden Woche (direction: -1 = zurück,
+// 1 = vor): alte Woche gleitet komplett raus, neue gleitet von der
+// Gegenseite rein - macht den Wochenwechsel klar sichtbar (Swipe + Pfeile).
+function animateWeekChange(direction) {
+  if (isAnimatingWeek) return;
+  isAnimatingWeek = true;
+
+  const dayList = document.getElementById("dayList");
+  const scrollArea = document.getElementById("scrollArea");
+  const width = scrollArea.clientWidth || dayList.getBoundingClientRect().width || 320;
+  const exitX = direction > 0 ? -width : width;
+
+  dayList.style.transition = "transform 0.2s ease-in, opacity 0.2s ease-in";
+  dayList.style.transform = `translateX(${exitX}px)`;
+  dayList.style.opacity = "0";
+
+  setTimeout(() => {
+    goToWeek(addDays(currentWeekStart, direction * 7));
+
+    dayList.style.transition = "none";
+    dayList.style.transform = `translateX(${-exitX}px)`;
+    dayList.style.opacity = "0";
+    void dayList.offsetWidth; // Reflow erzwingen, damit die Startposition greift
+
+    requestAnimationFrame(() => {
+      dayList.style.transition = "transform 0.22s ease-out, opacity 0.22s ease-out";
+      dayList.style.transform = "translateX(0px)";
+      dayList.style.opacity = "1";
+      setTimeout(() => {
+        isAnimatingWeek = false;
+      }, 230);
+    });
+  }, 200);
+}
+
 function initNavigation() {
   document.getElementById("prevWeek").addEventListener("click", () => {
-    goToWeek(addDays(currentWeekStart, -7));
+    animateWeekChange(-1);
   });
   document.getElementById("nextWeek").addEventListener("click", () => {
-    goToWeek(addDays(currentWeekStart, 7));
+    animateWeekChange(1);
   });
   document.getElementById("todayBtn").addEventListener("click", () => {
     goToWeek(new Date());
@@ -448,6 +485,10 @@ function initGestures() {
   scrollArea.addEventListener(
     "touchstart",
     (e) => {
+      if (isAnimatingWeek) {
+        startX = null;
+        return;
+      }
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       axis = null;
@@ -486,12 +527,13 @@ function initGestures() {
 
   scrollArea.addEventListener("touchend", () => {
     if (axis === "x") {
-      dayList.style.transition = "transform 0.2s ease-out";
-      dayList.style.transform = "translateX(0px)";
       if (dragX <= -SWIPE_THRESHOLD) {
-        goToWeek(addDays(currentWeekStart, 7));
+        animateWeekChange(1);
       } else if (dragX >= SWIPE_THRESHOLD) {
-        goToWeek(addDays(currentWeekStart, -7));
+        animateWeekChange(-1);
+      } else {
+        dayList.style.transition = "transform 0.2s ease-out";
+        dayList.style.transform = "translateX(0px)";
       }
     } else if (axis === "y") {
       const height = parseFloat(indicator.style.height || "0");

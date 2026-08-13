@@ -120,11 +120,14 @@ function parseRowDate(raw) {
   return null;
 }
 
+// Erwartet HH:MM, akzeptiert defensiv auch "." oder "," als Trenner
+// (z.B. "10.00" statt "10:00" - kommt in der Praxis vor, wenn im Sheet
+// eine Uhrzeit ohne Zeit-Zellformat als Zahl eingetragen wird).
 function parseTime(raw) {
   if (!raw) return null;
   const str = raw.trim();
   if (!str) return null;
-  const m = str.match(/^(\d{1,2}):(\d{2})/);
+  const m = str.match(/^(\d{1,2})[:.,](\d{2})/);
   if (!m) return null;
   return `${m[1].padStart(2, "0")}:${m[2]}`;
 }

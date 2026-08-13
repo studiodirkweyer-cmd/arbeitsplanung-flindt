@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Arbeitsplanung Flindt</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+
+  <!-- iOS Standalone-Modus (kein Browser-Chrome, eigenes Home-Icon) -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Arbeitsplanung Flindt" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="app-title">Arbeitsplanung Flindt</div>
+    <header class="topbar">
+      <button id="prevWeek" class="nav-btn" aria-label="Vorherige Woche">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+
+      <button id="monthLabelBtn" class="month-label-btn">
+        <span id="monthLabel" class="month-label">–</span>
+      </button>
+
+      <button id="nextWeek" class="nav-btn" aria-label="Nächste Woche">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+
+      <input type="date" id="datePicker" class="date-picker-hidden" aria-hidden="true" />
+
+      <button id="todayBtn" class="today-btn">Heute</button>
+    </header>
+
+    <div id="weekStrip" class="week-strip"></div>
+
+    <main id="scrollArea" class="scroll-area">
+      <div id="pullIndicator" class="pull-indicator">
+        <div class="pull-spinner"></div>
+        <span id="pullLabel">Zum Aktualisieren ziehen</span>
+      </div>
+      <div id="dayList" class="day-list"></div>
+    </main>
+
+    <footer class="statusbar">
+      <span id="offlineBadge" class="offline-badge" hidden>Offline</span>
+      <span id="syncStatus">Lade Daten…</span>
+    </footer>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

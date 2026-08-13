@@ -132,6 +132,28 @@ function parseTime(raw) {
   return `${m[1].padStart(2, "0")}:${m[2]}`;
 }
 
+// Erkennt den Freitext-Marker "FREI" (Groß-/Kleinschreibung und
+// Leerzeichen egal) in einer Start- oder Ende-Zelle als expliziten
+// "hat frei"-Eintrag für diese Person.
+function isFreiMarker(raw) {
+  if (!raw) return false;
+  return raw.trim().toUpperCase() === "FREI";
+}
+
+// Liest das Start/Ende-Zellenpaar einer Person aus. Rückgabe:
+// - null: keine Angabe (beide Zellen leer)
+// - { off: true }: explizit als "FREI" markiert
+// - { off: false, start, end }: reguläre Schicht (auch Teilangaben möglich)
+function parseShift(startRaw, endRaw) {
+  if (isFreiMarker(startRaw) || isFreiMarker(endRaw)) {
+    return { off: true, start: null, end: null };
+  }
+  const start = parseTime(startRaw);
+  const end = parseTime(endRaw);
+  if (!start && !end) return null;
+  return { off: false, start, end };
+}
+
 // Baut aus den rohen CSV-Zeilen die Tagesdaten. Spaltenreihenfolge ist fix
 // (nicht aus dem Header gelesen): A=Datum, B=Wochentag(ignoriert),
 // C/D=Romy Start/Ende, E/F=Bea Start/Ende, G/H=Iris Start/Ende.
@@ -142,17 +164,10 @@ function buildDaysFromRows(rows) {
     const date = parseRowDate(row[0]);
     if (!date) continue; // Titel-, Leer-, Header- und Monats-Trennzeilen
 
-    const romyStart = parseTime(row[2]);
-    const romyEnd = parseTime(row[3]);
-    const beaStart = parseTime(row[4]);
-    const beaEnd = parseTime(row[5]);
-    const irisStart = parseTime(row[6]);
-    const irisEnd = parseTime(row[7]);
-
     const shifts = {
-      romy: romyStart || romyEnd ? { start: romyStart, end: romyEnd } : null,
-      bea: beaStart || beaEnd ? { start: beaStart, end: beaEnd } : null,
-      iris: irisStart || irisEnd ? { start: irisStart, end: irisEnd } : null,
+      romy: parseShift(row[2], row[3]),
+      bea: parseShift(row[4], row[5]),
+      iris: parseShift(row[6], row[7]),
     };
 
     const key = dateKey(date);
@@ -289,7 +304,7 @@ function renderWeekStrip() {
     if (isSameDay(date, today)) btn.classList.add("is-today");
 
     const dots = (day
-      ? CONFIG.EMPLOYEES.filter((e) => day.shifts[e.key])
+      ? CONFIG.EMPLOYEES.filter((e) => day.shifts[e.key] && !day.shifts[e.key].off)
       : []
     )
       .map((e) => `<span class="wd-dot" style="background:${e.color}"></span>`)
@@ -335,21 +350,29 @@ function renderDayList() {
     if (!day) {
       shiftList.innerHTML = `<div class="shift-no-data">Keine Daten für diesen Tag</div>`;
     } else {
-      const working = CONFIG.EMPLOYEES.filter((e) => day.shifts[e.key]);
-      if (working.length === 0) {
+      const entries = CONFIG.EMPLOYEES.filter((e) => day.shifts[e.key]);
+      if (entries.length === 0) {
         shiftList.innerHTML = `<div class="shift-empty">Frei</div>`;
       } else {
-        for (const e of working) {
+        for (const e of entries) {
           const shift = day.shifts[e.key];
           const row = document.createElement("div");
           row.className = "shift-row";
           let timeLabel;
-          if (shift.start && shift.end) timeLabel = `${shift.start} – ${shift.end}`;
-          else if (shift.start) timeLabel = `ab ${shift.start}`;
-          else timeLabel = `bis ${shift.end}`;
+          let timeClass = "shift-time";
+          if (shift.off) {
+            timeLabel = "Frei";
+            timeClass += " is-off";
+          } else if (shift.start && shift.end) {
+            timeLabel = `${shift.start} – ${shift.end}`;
+          } else if (shift.start) {
+            timeLabel = `ab ${shift.start}`;
+          } else {
+            timeLabel = `bis ${shift.end}`;
+          }
           row.innerHTML = `
             <span class="shift-name-badge" style="background:${e.color};color:${e.textColor}">${e.name}</span>
-            <span class="shift-time">${timeLabel}</span>
+            <span class="${timeClass}">${timeLabel}</span>
           `;
           shiftList.appendChild(row);
         }
@@ -405,26 +428,32 @@ function initNavigation() {
   });
 }
 
-/* ---------- Pull-to-refresh ---------- */
-function initPullToRefresh() {
+/* ---------- Touch-Gesten: Pull-to-refresh (vertikal) + Wochenwechsel (horizontal) ---------- */
+function initGestures() {
   const scrollArea = document.getElementById("scrollArea");
   const indicator = document.getElementById("pullIndicator");
   const label = document.getElementById("pullLabel");
+  const dayList = document.getElementById("dayList");
 
-  const THRESHOLD = 64;
+  const PULL_THRESHOLD = 64;
+  const SWIPE_THRESHOLD = 60;
+  const AXIS_LOCK_DISTANCE = 10;
+
+  let startX = null;
   let startY = null;
-  let pulling = false;
+  let axis = null; // "x" (Wochenwechsel) | "y" (Pull-to-refresh) | null
+  let pullEligible = false;
+  let dragX = 0;
 
   scrollArea.addEventListener(
     "touchstart",
     (e) => {
-      if (scrollArea.scrollTop <= 0) {
-        startY = e.touches[0].clientY;
-        pulling = true;
-      } else {
-        startY = null;
-        pulling = false;
-      }
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      axis = null;
+      dragX = 0;
+      pullEligible = scrollArea.scrollTop <= 0;
+      dayList.style.transition = "none";
     },
     { passive: true }
   );
@@ -432,34 +461,58 @@ function initPullToRefresh() {
   scrollArea.addEventListener(
     "touchmove",
     (e) => {
-      if (!pulling || startY === null) return;
-      const delta = e.touches[0].clientY - startY;
-      if (delta <= 0) return;
-      const height = Math.min(delta * 0.6, 90);
-      indicator.classList.add("visible");
-      indicator.style.height = `${height}px`;
-      label.textContent = height >= THRESHOLD ? "Loslassen zum Aktualisieren" : "Zum Aktualisieren ziehen";
+      if (startX === null) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+
+      if (axis === null) {
+        if (Math.abs(dx) < AXIS_LOCK_DISTANCE && Math.abs(dy) < AXIS_LOCK_DISTANCE) return;
+        axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+
+      if (axis === "x") {
+        e.preventDefault();
+        dragX = dx;
+        dayList.style.transform = `translateX(${dx * 0.55}px)`;
+      } else if (pullEligible && dy > 0) {
+        const height = Math.min(dy * 0.6, 90);
+        indicator.classList.add("visible");
+        indicator.style.height = `${height}px`;
+        label.textContent = height >= PULL_THRESHOLD ? "Loslassen zum Aktualisieren" : "Zum Aktualisieren ziehen";
+      }
     },
-    { passive: true }
+    { passive: false }
   );
 
   scrollArea.addEventListener("touchend", () => {
-    if (!pulling) return;
-    const height = parseFloat(indicator.style.height || "0");
-    indicator.classList.remove("visible");
-    if (height >= THRESHOLD) {
-      indicator.style.height = "48px";
-      indicator.classList.add("spinning");
-      label.textContent = "Aktualisiere…";
-      sync(true).finally(() => {
-        indicator.classList.remove("spinning");
+    if (axis === "x") {
+      dayList.style.transition = "transform 0.2s ease-out";
+      dayList.style.transform = "translateX(0px)";
+      if (dragX <= -SWIPE_THRESHOLD) {
+        goToWeek(addDays(currentWeekStart, 7));
+      } else if (dragX >= SWIPE_THRESHOLD) {
+        goToWeek(addDays(currentWeekStart, -7));
+      }
+    } else if (axis === "y") {
+      const height = parseFloat(indicator.style.height || "0");
+      indicator.classList.remove("visible");
+      if (height >= PULL_THRESHOLD) {
+        indicator.style.height = "48px";
+        indicator.classList.add("spinning");
+        label.textContent = "Aktualisiere…";
+        sync(true).finally(() => {
+          indicator.classList.remove("spinning");
+          indicator.style.height = "0px";
+        });
+      } else {
         indicator.style.height = "0px";
-      });
-    } else {
-      indicator.style.height = "0px";
+      }
     }
-    pulling = false;
+    startX = null;
     startY = null;
+    axis = null;
+    pullEligible = false;
+    dragX = 0;
   });
 }
 
@@ -474,7 +527,7 @@ function init() {
   renderWeek();
   updateSyncStatus();
   initNavigation();
-  initPullToRefresh();
+  initGestures();
 
   sync(false);
 

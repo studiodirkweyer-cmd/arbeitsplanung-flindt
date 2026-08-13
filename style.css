@@ -191,7 +191,9 @@ body {
 .scroll-area {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   position: relative;
   padding-bottom: calc(var(--safe-bottom) + 16px);
 }
@@ -307,6 +309,10 @@ body {
   font-size: 15px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+.shift-row .shift-time.is-off {
+  font-style: italic;
 }
 
 .shift-empty {
